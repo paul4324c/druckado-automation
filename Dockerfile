@@ -1,4 +1,4 @@
-# Use a stable Python base image
+# Use official Python slim image
 FROM python:3.10-slim
 
 # Set working directory
@@ -8,15 +8,15 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of your code
+# Copy your script and config
 COPY druckado_automation.py .
 COPY config.ini .
 
-# Create orders directory
+# Create orders folder
 RUN mkdir -p /app/orders
 
-# Set environment variables if you want defaults (can override in Koyeb dashboard)
+# Set environment variable defaults (optional)
 ENV LIVE_MODE=false
 
-# Command to run your worker
+# Command to run the worker
 CMD ["python", "druckado_automation.py"]
