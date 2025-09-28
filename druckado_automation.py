@@ -20,7 +20,6 @@ ORDERS_DIR = "/app/orders"
 # PrusaSlicer executable path inside Docker
 PRUSASLICER_EXE = "/usr/bin/prusa-slicer"  # Adjust if using custom Docker image
 
-
 # =============================
 # FUNCTIONS
 # =============================
@@ -64,11 +63,9 @@ def slice_model(order_folder):
             stl_file = os.path.join(order_folder, file)
             gcode_file = os.path.join(order_folder, "model.gcode")
             print(f"Slicing {stl_file} -> {gcode_file}")
-            # Use subprocess to call PrusaSlicer CLI
-            # Replace PRUSASLICER_EXE with your executable path if needed
             subprocess.run([
                 PRUSASLICER_EXE,
-                "--load", "/app/config.ini",  # your slicer config
+                "--load", "/app/config.ini",
                 "--output", gcode_file,
                 stl_file
             ])
