@@ -1,15 +1,24 @@
-FROM python:3.10-slim
+# Base image
+FROM ubuntu:22.04
 
-# Set working folder inside the container
+# Install dependencies
+RUN apt-get update && \
+    apt-get install -y python3 python3-pip wget unzip libgl1 && \
+    apt-get clean
+
+# Copy requirements and install
+COPY requirements.txt /app/requirements.txt
+RUN pip3 install --no-cache-dir -r /app/requirements.txt
+
+# Copy script and config
+COPY druckado_automation.py /app/druckado_automation.py
+COPY config.ini /app/config.ini
+
+# Create orders directory
+RUN mkdir -p /app/orders
+
+# Set working directory
 WORKDIR /app
 
-# Copy project files into container
-COPY requirements.txt .
-COPY druckado_automation.py .
-
-# Install requirements
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Start script automatically
-CMD ["python", "druckado_automation.py"]
-
+# Run the worker continuously
+CMD ["python3", "druckado_automation.py"]
