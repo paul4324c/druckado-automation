@@ -1,0 +1,3 @@
+requests
+pyzmail36
+imapclient
