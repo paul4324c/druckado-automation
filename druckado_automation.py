@@ -54,5 +54,7 @@ def check_email_for_orders():
 # --- Slicing function ---
 def slice_model(order_folder):
     stl_file = os.path.join(order_folder, "model.stl")
-    gcode_file = os.path.join(or_
+    gcode_file = os.path.join(order_folder, "model.gcode")
+
+
 
