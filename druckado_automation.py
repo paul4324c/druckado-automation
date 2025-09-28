@@ -2,23 +2,20 @@ import os
 import time
 import requests
 import pyzmail36
-import subprocess
 
 # =============================
 # CONFIGURATION (Environment Variables)
 # =============================
-EMAIL_HOST = os.environ.get("EMAIL_HOST")
-EMAIL_USER = os.environ.get("EMAIL_USER")
-EMAIL_PASS = os.environ.get("EMAIL_PASS")
+EMAIL_HOST = os.environ.get("EMAIL_HOST")       # e.g. imap.gmail.com
+EMAIL_USER = os.environ.get("EMAIL_USER")       # test inbox email
+EMAIL_PASS = os.environ.get("EMAIL_PASS")       # app password or mailbox password
+
 LIVE_MODE = os.environ.get("LIVE_MODE", "false").lower() == "true"
-PRINTER_API_URL = os.environ.get("PRINTER_API_URL")
-PRINTER_API_KEY = os.environ.get("PRINTER_API_KEY")
+PRINTER_API_URL = os.environ.get("PRINTER_API_URL", "https://httpbin.org/post")
+PRINTER_API_KEY = os.environ.get("PRINTER_API_KEY", "DUMMY_KEY")
 
 # Path where orders will be temporarily stored
 ORDERS_DIR = "/app/orders"
-
-# PrusaSlicer executable path inside Docker (adjust later if using real slicer)
-PRUSASLICER_EXE = "/usr/bin/prusa-slicer"
 
 # =============================
 # FUNCTIONS
@@ -49,73 +46,42 @@ def check_email():
                     file_path = os.path.join(order_folder, part.filename)
                     with open(file_path, "wb") as f:
                         f.write(part.get_payload())
+                    print(f"📂 Saved STL to {file_path}")
                     orders_found.append(order_folder)
     return orders_found
 
 
 def slice_model(order_folder):
-    """Convert STL to G-code (placeholder; integrate PrusaSlicer if available)."""
+    """Simulate slicing STL to G-code."""
     for file in os.listdir(order_folder):
         if file.lower().endswith(".stl"):
             stl_file = os.path.join(order_folder, file)
             gcode_file = os.path.join(order_folder, "model.gcode")
-            print(f"Slicing {stl_file} -> {gcode_file}")
+            print(f"🛠️ Slicing {stl_file} -> {gcode_file}")
             
-            # Placeholder for slicing command
-            # If you have PrusaSlicer in Docker, uncomment below
-            # subprocess.run([
-            #     PRUSASLICER_EXE,
-            #     "--load", "/app/config.ini",
-            #     "--output", gcode_file,
-            #     stl_file
-            # ])
-            
-            # For now, just create an empty G-code file
+            # Fake G-code file for testing
             with open(gcode_file, "w") as f:
                 f.write("; G-code placeholder\n")
-            print(f"✅ Sliced: {gcode_file}")
+            print(f"✅ Created dummy G-code at {gcode_file}")
             return gcode_file
     return None
 
 
 def send_to_printer(gcode_file):
-    """Send G-code to printer if LIVE_MODE is True."""
+    """Send (or simulate sending) G-code to printer."""
     if not LIVE_MODE:
-        print(f"[SIMULATION] Would send {gcode_file} to printer")
+        print(f"[SIMULATION] Would send {gcode_file} to printer at {PRINTER_API_URL}")
+        # Optional "echo" test using httpbin
+        with open(gcode_file, "rb") as f:
+            test_resp = requests.post("https://httpbin.org/post", files={"file": f})
+            print("🌐 Test echo response from httpbin:", test_resp.json()["files"])
         return
+
     if not PRINTER_API_URL or not PRINTER_API_KEY:
-        print("Printer API info missing. Cannot send G-code.")
+        print("❌ Missing printer API info. Cannot send G-code.")
         return
+
+    headers = {"Authorization": f"Bearer {PRINTER_API_KEY}"}
     with open(gcode_file, "rb") as f:
-        files = {"file": f}
-        headers = {"Authorization": f"Bearer {PRINTER_API_KEY}"}
-        response = requests.post(PRINTER_API_URL, files=files, headers=headers)
-        if response.status_code == 200:
-            print(f"✅ Successfully sent {gcode_file} to printer")
-        else:
-            print(f"❌ Failed to send {gcode_file}: {response.text}")
-
-
-def process_orders():
-    """Full pipeline: check email → slice → send."""
-    orders = check_email()
-    for order_folder in orders:
-        gcode_file = slice_model(order_folder)
-        if gcode_file:
-            send_to_printer(gcode_file)
-
-
-# =============================
-# MAIN LOOP
-# =============================
-if __name__ == "__main__":
-    print("🚀 Druckado Automation Worker started")
-    os.makedirs(ORDERS_DIR, exist_ok=True)
-    while True:
-        try:
-            process_orders()
-            print("Waiting 60 seconds before checking for new orders...")
-            time.sleep(60)
-        except Exception as e:
-            print(f"⚠️ Error occurred: {e}")
-            time.sleep(60)
+        files = {"file": (os.path.basename(gcode_file), f, "application/octet-stream")}
+        response = requests.post(PRINTER_API_URL, 
