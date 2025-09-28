@@ -1,23 +1,22 @@
-FROM ubuntu:22.04
+# Use a stable Python base image
+FROM python:3.10-slim
 
-# Install Python 3.10 and dependencies
-RUN apt-get update && \
-    apt-get install -y python3 python3-venv python3-pip wget unzip libgl1 && \
-    python3 -m pip install --upgrade pip setuptools wheel && \
-    apt-get clean
-
+# Set working directory
 WORKDIR /app
 
-# Copy your files
-COPY requirements.txt /app/requirements.txt
-COPY druckado_automation.py /app/druckado_automation.py
-COPY config.ini /app/config.ini
+# Copy requirements and install
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Python packages
-RUN python3 -m pip install --no-cache-dir -r /app/requirements.txt
+# Copy the rest of your code
+COPY druckado_automation.py .
+COPY config.ini .
 
 # Create orders directory
 RUN mkdir -p /app/orders
 
-# Start the automation script
-CMD ["python3", "/app/druckado_automation.py"]
+# Set environment variables if you want defaults (can override in Koyeb dashboard)
+ENV LIVE_MODE=false
+
+# Command to run your worker
+CMD ["python", "druckado_automation.py"]
