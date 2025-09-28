@@ -1,60 +1,119 @@
 import os
 import time
-import subprocess
 import requests
-import email
-import imaplib
+import pyzmail36
+import subprocess
 
-# --- Directories ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ORDERS_DIR = os.path.join(BASE_DIR, "orders")
-CONFIG_FILE = os.path.join(BASE_DIR, "config.ini")
+# =============================
+# CONFIGURATION (Environment Variables)
+# =============================
+EMAIL_HOST = os.environ.get("EMAIL_HOST")
+EMAIL_USER = os.environ.get("EMAIL_USER")
+EMAIL_PASS = os.environ.get("EMAIL_PASS")
+LIVE_MODE = os.environ.get("LIVE_MODE", "false").lower() == "true"
+PRINTER_API_URL = os.environ.get("PRINTER_API_URL")
+PRINTER_API_KEY = os.environ.get("PRINTER_API_KEY")
 
-# Make sure orders folder exists
-os.makedirs(ORDERS_DIR, exist_ok=True)
+# Path where orders will be temporarily stored
+ORDERS_DIR = "/app/orders"
 
-# --- Environment Variables (set in Koyeb Dashboard) ---
-EMAIL_HOST = os.getenv("EMAIL_HOST", "imap.gmail.com")
-EMAIL_USER = os.getenv("EMAIL_USER")
-EMAIL_PASS = os.getenv("EMAIL_PASS")
-LIVE_MODE = os.getenv("LIVE_MODE", "false").lower() == "true"
-PRINTER_API_URL = os.getenv("PRINTER_API_URL")
-PRINTER_API_KEY = os.getenv("PRINTER_API_KEY")
+# PrusaSlicer executable path inside Docker
+PRUSASLICER_EXE = "/usr/bin/prusa-slicer"  # Adjust if using custom Docker image
 
-# Path to PrusaSlicer inside Docker (you’ll update this later if needed)
-PRUSASLICER_EXE = "prusa-slicer"
 
-# --- Email check function ---
-def check_email_for_orders():
-    print("Checking email for new orders...")
+# =============================
+# FUNCTIONS
+# =============================
+def check_email():
+    """Check inbox for new order emails and download attachments"""
+    orders_found = []
     try:
-        mail = imaplib.IMAP4_SSL(EMAIL_HOST)
-        mail.login(EMAIL_USER, EMAIL_PASS)
-        mail.select("inbox")
-        result, data = mail.search(None, "UNSEEN")
-        if result != "OK":
-            return []
+        from imapclient import IMAPClient
+    except ImportError:
+        print("IMAPClient not installed. Make sure requirements.txt has it.")
+        return orders_found
 
-        orders = []
-        for num in data[0].split():
-            result, msg_data = mail.fetch(num, "(RFC822)")
-            if result != "OK":
-                continue
-            raw_msg = msg_data[0][1]
-            msg = email.message_from_bytes(raw_msg)
-            subject = msg["subject"]
-            print(f"📩 New email: {subject}")
-            # In a real setup, parse attachments here
-            orders.append(subject)
-        return orders
-    except Exception as e:
-        print("Email check failed:", e)
-        return []
+    with IMAPClient(EMAIL_HOST) as client:
+        client.login(EMAIL_USER, EMAIL_PASS)
+        client.select_folder("INBOX")
+        messages = client.search(["UNSEEN"])
+        for msgid, data in client.fetch(messages, ["BODY[]"]).items():
+            msg = pyzmail36.PyzMessage.factory(data[b"BODY[]"])
+            subject = msg.get_subject()
+            if msg.text_part:
+                body = msg.text_part.get_payload().decode(msg.text_part.charset)
+            else:
+                body = ""
+            print(f"📩 New order detected: {subject}")
+            # Save STL attachment
+            for part in msg.mailparts:
+                if part.filename and part.filename.lower().endswith(".stl"):
+                    order_folder = os.path.join(ORDERS_DIR, f"order_{msgid}")
+                    os.makedirs(order_folder, exist_ok=True)
+                    file_path = os.path.join(order_folder, part.filename)
+                    with open(file_path, "wb") as f:
+                        f.write(part.get_payload())
+                    orders_found.append(order_folder)
+    return orders_found
 
-# --- Slicing function ---
+
 def slice_model(order_folder):
-    stl_file = os.path.join(order_folder, "model.stl")
-    gcode_file = os.path.join(order_folder, "model.gcode")
+    """Simulate slicing STL files into G-code"""
+    for file in os.listdir(order_folder):
+        if file.lower().endswith(".stl"):
+            stl_file = os.path.join(order_folder, file)
+            gcode_file = os.path.join(order_folder, "model.gcode")
+            print(f"Slicing {stl_file} -> {gcode_file}")
+            # Use subprocess to call PrusaSlicer CLI
+            # Replace PRUSASLICER_EXE with your executable path if needed
+            subprocess.run([
+                PRUSASLICER_EXE,
+                "--load", "/app/config.ini",  # your slicer config
+                "--output", gcode_file,
+                stl_file
+            ])
+            print(f"✅ Sliced: {gcode_file}")
+            return gcode_file
+    return None
 
 
+def send_to_printer(gcode_file):
+    """Send G-code to printer if LIVE_MODE is True"""
+    if not LIVE_MODE:
+        print(f"[SIMULATION] Would send {gcode_file} to printer")
+        return
+    if not PRINTER_API_URL or not PRINTER_API_KEY:
+        print("Printer API info missing. Cannot send G-code.")
+        return
+    with open(gcode_file, "rb") as f:
+        files = {"file": f}
+        headers = {"Authorization": f"Bearer {PRINTER_API_KEY}"}
+        response = requests.post(PRINTER_API_URL, files=files, headers=headers)
+        if response.status_code == 200:
+            print(f"✅ Successfully sent {gcode_file} to printer")
+        else:
+            print(f"❌ Failed to send {gcode_file}: {response.text}")
 
+
+def process_orders():
+    """Full pipeline: check email → slice → send"""
+    orders = check_email()
+    for order_folder in orders:
+        gcode_file = slice_model(order_folder)
+        if gcode_file:
+            send_to_printer(gcode_file)
+
+
+# =============================
+# MAIN LOOP
+# =============================
+if __name__ == "__main__":
+    print("🚀 Druckado Automation Worker started")
+    while True:
+        try:
+            process_orders()
+            print("Waiting 60 seconds before checking for new orders...")
+            time.sleep(60)
+        except Exception as e:
+            print(f"⚠️ Error occurred: {e}")
+            time.sleep(60)
