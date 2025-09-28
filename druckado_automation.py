@@ -17,14 +17,14 @@ PRINTER_API_KEY = os.environ.get("PRINTER_API_KEY")
 # Path where orders will be temporarily stored
 ORDERS_DIR = "/app/orders"
 
-# PrusaSlicer executable path inside Docker
-PRUSASLICER_EXE = "/usr/bin/prusa-slicer"  # Adjust if using custom Docker image
+# PrusaSlicer executable path inside Docker (adjust later if using real slicer)
+PRUSASLICER_EXE = "/usr/bin/prusa-slicer"
 
 # =============================
 # FUNCTIONS
 # =============================
 def check_email():
-    """Check inbox for new order emails and download attachments"""
+    """Check inbox for new order emails and download STL attachments."""
     orders_found = []
     try:
         from imapclient import IMAPClient
@@ -39,12 +39,9 @@ def check_email():
         for msgid, data in client.fetch(messages, ["BODY[]"]).items():
             msg = pyzmail36.PyzMessage.factory(data[b"BODY[]"])
             subject = msg.get_subject()
-            if msg.text_part:
-                body = msg.text_part.get_payload().decode(msg.text_part.charset)
-            else:
-                body = ""
             print(f"📩 New order detected: {subject}")
-            # Save STL attachment
+            
+            # Save STL attachments
             for part in msg.mailparts:
                 if part.filename and part.filename.lower().endswith(".stl"):
                     order_folder = os.path.join(ORDERS_DIR, f"order_{msgid}")
@@ -57,25 +54,32 @@ def check_email():
 
 
 def slice_model(order_folder):
-    """Simulate slicing STL files into G-code"""
+    """Convert STL to G-code (placeholder; integrate PrusaSlicer if available)."""
     for file in os.listdir(order_folder):
         if file.lower().endswith(".stl"):
             stl_file = os.path.join(order_folder, file)
             gcode_file = os.path.join(order_folder, "model.gcode")
             print(f"Slicing {stl_file} -> {gcode_file}")
-            subprocess.run([
-                PRUSASLICER_EXE,
-                "--load", "/app/config.ini",
-                "--output", gcode_file,
-                stl_file
-            ])
+            
+            # Placeholder for slicing command
+            # If you have PrusaSlicer in Docker, uncomment below
+            # subprocess.run([
+            #     PRUSASLICER_EXE,
+            #     "--load", "/app/config.ini",
+            #     "--output", gcode_file,
+            #     stl_file
+            # ])
+            
+            # For now, just create an empty G-code file
+            with open(gcode_file, "w") as f:
+                f.write("; G-code placeholder\n")
             print(f"✅ Sliced: {gcode_file}")
             return gcode_file
     return None
 
 
 def send_to_printer(gcode_file):
-    """Send G-code to printer if LIVE_MODE is True"""
+    """Send G-code to printer if LIVE_MODE is True."""
     if not LIVE_MODE:
         print(f"[SIMULATION] Would send {gcode_file} to printer")
         return
@@ -93,7 +97,7 @@ def send_to_printer(gcode_file):
 
 
 def process_orders():
-    """Full pipeline: check email → slice → send"""
+    """Full pipeline: check email → slice → send."""
     orders = check_email()
     for order_folder in orders:
         gcode_file = slice_model(order_folder)
@@ -106,6 +110,7 @@ def process_orders():
 # =============================
 if __name__ == "__main__":
     print("🚀 Druckado Automation Worker started")
+    os.makedirs(ORDERS_DIR, exist_ok=True)
     while True:
         try:
             process_orders()
